@@ -2,7 +2,7 @@ from typing import Optional
 
 from PyQt6.QtCore import QObject, pyqtSlot
 from serial.tools import list_ports
-
+from app.services.origin_monitor import OriginMonitor
 from app.models.config import SerialConfig
 from app.models.packet import UdpPacket
 from app.models.statistics import RuntimeStatistics
@@ -29,6 +29,10 @@ class MainController(QObject):
         self._statistics = RuntimeStatistics()
         self._frame_assembler = FrameAssembler()
 
+        self._origin_folder_count = 0
+        self._origin_file_count = 0
+        self._origin_monitor = OriginMonitor(self)
+
         self._serial_worker: Optional[SerialWorker] = None
         self._serial_config: Optional[SerialConfig] = None
         self._udp_sender: Optional[UdpSender] = None
@@ -51,7 +55,7 @@ class MainController(QObject):
             "等待发送",
             "disconnected",
         )
-
+        self._origin_monitor.start()
         self.refresh_ports()
 
     def _connect_signals(self) -> None:
@@ -71,7 +75,12 @@ class MainController(QObject):
         self._frame_assembler.frame_ready.connect(
             self._handle_complete_frame
         )
-
+        self._origin_monitor.counts_changed.connect(
+            self._on_origin_counts_changed
+        )
+        self._origin_monitor.log_message.connect(
+            self._window.append_log
+        )
     @pyqtSlot()
     def refresh_ports(self) -> None:
         try:
@@ -332,6 +341,12 @@ class MainController(QObject):
             raw_data=raw_data,
             serial_port=config.port,
             encoding=config.encoding,
+            origin_folder_count=(
+                self._origin_folder_count
+            ),
+            origin_file_count=(
+                self._origin_file_count
+            ),
         )
 
         try:
@@ -368,6 +383,20 @@ class MainController(QObject):
             self._statistics
         )
 
+    @pyqtSlot(int, int)
+    def _on_origin_counts_changed(
+        self,
+        folder_count: int,
+        file_count: int,
+    ) -> None:
+        self._origin_folder_count = folder_count
+        self._origin_file_count = file_count
+
+        self._window.update_origin_counts(
+            folder_count,
+            file_count,
+        )
+
     @pyqtSlot()
     def reset_statistics(self) -> None:
         self._statistics.reset()
@@ -384,7 +413,7 @@ class MainController(QObject):
             return
 
         self._shutting_down = True
-
+        self._origin_monitor.stop()
         self._frame_assembler.discard()
 
         worker = self._serial_worker

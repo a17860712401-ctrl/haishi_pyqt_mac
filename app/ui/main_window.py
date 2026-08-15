@@ -117,13 +117,14 @@ class MainWindow(QMainWindow):
         self.parity_combo.addItem("Space", "S")
 
         self.encoding_combo = QComboBox()
-        self.encoding_combo.addItem("UTF-8", "utf-8")
         self.encoding_combo.addItem("GBK", "gbk")
+        self.encoding_combo.addItem("UTF-8", "utf-8")
+        
 
         self.frame_gap_spin = QSpinBox()
         self.frame_gap_spin.setRange(100, 10000)
-        self.frame_gap_spin.setValue(1000)
-        self.frame_gap_spin.setSuffix(" ms")
+        self.frame_gap_spin.setValue(800)
+        self.frame_gap_spin.setSuffix("ms")
 
         self.serial_button = QPushButton("打开串口")
         self.serial_button.setObjectName("primaryButton")
@@ -196,6 +197,13 @@ class MainWindow(QMainWindow):
         self.receive_failure_label = QLabel("接收失败：0")
         self.udp_success_label = QLabel("UDP 成功：0")
         self.udp_failure_label = QLabel("UDP 失败：0")
+        self.origin_folder_count_label = QLabel(
+            "Origin 文件夹：0"
+        )
+        self.origin_file_count_label = QLabel(
+            "Origin 文件：0"
+        )
+        
 
         for label in (
             self.received_bytes_label,
@@ -203,6 +211,8 @@ class MainWindow(QMainWindow):
             self.receive_failure_label,
             self.udp_success_label,
             self.udp_failure_label,
+            self.origin_folder_count_label,
+            self.origin_file_count_label,
         ):
             layout.addWidget(label)
 
@@ -398,7 +408,17 @@ class MainWindow(QMainWindow):
         self.udp_failure_label.setText(
             f"UDP 失败：{statistics.udp_send_failure}"
         )
-
+    def update_origin_counts(
+        self,
+        folder_count: int,
+        file_count: int,
+    ) -> None:
+        self.origin_folder_count_label.setText(
+            f"Origin 文件夹：{folder_count}"
+        )
+        self.origin_file_count_label.setText(
+            f"Origin 文件：{file_count}"
+        )
     def append_received_message(
         self,
         text: str,
@@ -438,12 +458,6 @@ class MainWindow(QMainWindow):
         label.style().unpolish(label)
         label.style().polish(label)
 
-    def closeEvent(
-        self,
-        event: QCloseEvent,
-    ) -> None:
-        self.closing.emit()
-        super().closeEvent(event)
     def _apply_style(self) -> None:
         self.setStyleSheet(
             """

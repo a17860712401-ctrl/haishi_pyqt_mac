@@ -18,14 +18,18 @@ class UdpPacket:
     source_encoding: str
     byte_count: int
     text: str
+    origin_folder_count: int = 0
+    origin_file_count: int = 0
 
     @classmethod
     def from_serial_message(
         cls,
-        text: str,
+        text: str, 
         raw_data: bytes,
         serial_port: str,
         encoding: TextEncoding,
+        origin_folder_count: int = 0,
+        origin_file_count: int = 0,
     ) -> "UdpPacket":
         return cls(
             protocol_version=1,
@@ -37,6 +41,8 @@ class UdpPacket:
             source_encoding=encoding.value,
             byte_count=len(raw_data),
             text=text,
+            origin_folder_count=origin_folder_count,
+            origin_file_count=origin_file_count,
         )
 
     def to_dict(self) -> Dict[str, Any]:

@@ -16,7 +16,7 @@ class FrameAssembler(QObject):
 
     def __init__(
         self,
-        gap_ms: int = 1000,
+        gap_ms: int = 500,
         parent: Optional[QObject] = None,
     ) -> None:
         super().__init__(parent)
