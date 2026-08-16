@@ -9,7 +9,7 @@ class StartupManagerError(RuntimeError):
 
 class StartupManager:
     APP_NAME = "SerialUdpBridge"
-
+    AUTOSTART_ARGUMENT = "--autostart"
     RUN_KEY = (
         r"Software\Microsoft\Windows"
         r"\CurrentVersion\Run"
@@ -22,14 +22,20 @@ class StartupManager:
     @classmethod
     def get_startup_command(cls) -> str:
         if getattr(sys, "frozen", False):
-            # PyInstaller 打包后的 EXE。
-            return f'"{sys.executable}"'
+            return (
+                f'"{sys.executable}" '
+                f"{cls.AUTOSTART_ARGUMENT}"
+            )
 
         # Windows 源码开发环境。
         project_root = Path(__file__).resolve().parents[2]
         main_file = project_root / "main.py"
 
-        return f'"{sys.executable}" "{main_file}"'
+        return (
+            f'"{sys.executable}" '
+            f'"{main_file}" '
+            f"{cls.AUTOSTART_ARGUMENT}"
+)
 
     @classmethod
     def ensure_enabled(cls) -> None:

@@ -1,5 +1,5 @@
 from typing import Optional
-
+from PyQt6.QtCore import QObject, pyqtSlot
 from PyQt6.QtCore import QObject, pyqtSlot
 from serial.tools import list_ports
 from app.services.origin_monitor import OriginMonitor
@@ -11,23 +11,33 @@ from app.services.message_decoder import (
     MessageDecodeError,
     MessageDecoder,
 )
+from PyQt6.QtCore import (
+    QObject,
+    QTimer,
+    pyqtSlot,
+)
 from app.services.udp_sender import (
     UdpSendError,
     UdpSender,
 )
 from app.ui.main_window import MainWindow
 from app.workers.serial_worker import SerialWorker
-
+from app.services.settings_manager import (
+    SettingsManager,
+    SettingsManagerError,
+)
 
 class MainController(QObject):
     """协调界面、串口线程、分帧、解码和 UDP 发送。"""
-
+    AUTO_CONNECT_RETRY_INTERVAL_MS = 3000
+    AUTO_CONNECT_MAX_ATTEMPTS = 20
     def __init__(self, window: MainWindow) -> None:
         super().__init__(window)
 
         self._window = window
         self._statistics = RuntimeStatistics()
         self._frame_assembler = FrameAssembler()
+        self._settings_manager = SettingsManager()
 
         self._origin_folder_count = 0
         self._origin_file_count = 0
@@ -41,6 +51,20 @@ class MainController(QObject):
         self._serial_had_error = False
         self._last_serial_error = ""
         self._shutting_down = False
+
+        self._auto_connect_active = False
+        self._auto_connect_attempts = 0
+
+        self._auto_connect_timer = QTimer(self)
+        self._auto_connect_timer.setSingleShot(
+            True
+        )
+        self._auto_connect_timer.setInterval(
+            self.AUTO_CONNECT_RETRY_INTERVAL_MS
+        )
+        self._auto_connect_timer.timeout.connect(
+            self._try_auto_connect
+        )
 
         self._connect_signals()
 
@@ -57,6 +81,7 @@ class MainController(QObject):
         )
         self._origin_monitor.start()
         self.refresh_ports()
+        self._restore_settings()
 
     def _connect_signals(self) -> None:
         self._window.refresh_ports_requested.connect(
@@ -81,6 +106,45 @@ class MainController(QObject):
         self._origin_monitor.log_message.connect(
             self._window.append_log
         )
+
+    def _restore_settings(self) -> None:
+        try:
+            settings = (
+                self._settings_manager.load()
+            )
+
+        except SettingsManagerError as error:
+            self._window.append_log(
+                str(error),
+                "ERROR",
+            )
+            self._window.append_log(
+                "将继续使用界面默认配置",
+                "WARNING",
+            )
+            return
+
+        if settings is None:
+            self._window.append_log(
+                "没有找到已保存的软件配置，"
+                "当前使用界面默认配置",
+                "INFO",
+            )
+            return
+
+        self._window.apply_configs(
+            settings.serial,
+            settings.udp,
+        )
+
+        self._window.append_log(
+            "已恢复软件配置："
+            f"串口 {settings.serial.port}，"
+            f"波特率 {settings.serial.baud_rate}，"
+            f"UDP {settings.udp.host}:"
+            f"{settings.udp.port}",
+            "INFO",
+        )       
     @pyqtSlot()
     def refresh_ports(self) -> None:
         try:
@@ -117,7 +181,136 @@ class MainController(QObject):
             )
 
     @pyqtSlot()
+    def start_auto_connect(self) -> None:
+        if self._shutting_down:
+            return
+
+        if (
+            self._serial_worker is not None
+            and self._serial_worker.isRunning()
+        ):
+            return
+
+        self._auto_connect_timer.stop()
+        self._auto_connect_active = True
+        self._auto_connect_attempts = 0
+
+        self._window.append_log(
+            "检测到Windows开机自启动，"
+            "开始自动打开串口",
+            "INFO",
+        )
+
+        self._try_auto_connect()
+
+
+    @pyqtSlot()
+    def _try_auto_connect(self) -> None:
+        if (
+            not self._auto_connect_active
+            or self._shutting_down
+        ):
+            return
+
+        if (
+            self._serial_worker is not None
+            and self._serial_worker.isRunning()
+        ):
+            return
+
+        if (
+            self._auto_connect_attempts
+            >= self.AUTO_CONNECT_MAX_ATTEMPTS
+        ):
+            self._auto_connect_active = False
+
+            self._window.append_log(
+                "自动打开串口失败："
+                "已达到最大尝试次数",
+                "ERROR",
+            )
+            return
+
+        self._auto_connect_attempts += 1
+
+        self._window.append_log(
+            "正在进行自动连接："
+            f"第 {self._auto_connect_attempts}/"
+            f"{self.AUTO_CONNECT_MAX_ATTEMPTS} 次",
+            "INFO",
+        )
+
+        started = self.open_serial(
+            save_settings=False
+        )
+
+        if not started:
+            self._schedule_auto_retry()
+
+
+    def _schedule_auto_retry(self) -> None:
+        if (
+            not self._auto_connect_active
+            or self._shutting_down
+        ):
+            return
+
+        if (
+            self._auto_connect_attempts
+            >= self.AUTO_CONNECT_MAX_ATTEMPTS
+        ):
+            self._auto_connect_active = False
+            self._auto_connect_timer.stop()
+
+            self._window.append_log(
+                "自动打开串口失败："
+                "已完成20次尝试",
+                "ERROR",
+            )
+            return
+
+        if self._auto_connect_timer.isActive():
+            return
+
+        next_attempt = (
+            self._auto_connect_attempts + 1
+        )
+
+        self._window.append_log(
+            "串口暂时不可用，3秒后重试："
+            f"下一次为第 {next_attempt}/"
+            f"{self.AUTO_CONNECT_MAX_ATTEMPTS} 次",
+            "WARNING",
+        )
+
+        self._auto_connect_timer.start()
+
+    def _cancel_auto_connect(
+        self,
+        reason: str = "",
+    ) -> None:
+        was_active = (
+            self._auto_connect_active
+            or self._auto_connect_timer.isActive()
+        )
+
+        self._auto_connect_active = False
+        self._auto_connect_timer.stop()
+
+        if was_active and reason:
+            self._window.append_log(
+                reason,
+                "INFO",
+            )
+
+    
+
+    @pyqtSlot()
     def toggle_serial(self) -> None:
+        self._cancel_auto_connect(
+                "检测到用户手动操作，"
+                "已取消自动连接重试"
+            )
         if (
             self._serial_worker is not None
             and self._serial_worker.isRunning()
@@ -126,7 +319,10 @@ class MainController(QObject):
         else:
             self.open_serial()
 
-    def open_serial(self) -> None:
+    def open_serial(
+        self,
+        save_settings: bool = True,
+    ) -> bool:
         try:
             serial_config = (
                 self._window.get_serial_config()
@@ -135,6 +331,31 @@ class MainController(QObject):
 
             serial_config.validate()
             udp_config.validate()
+
+            if save_settings:
+                try:
+                    self._settings_manager.save(
+                        serial_config,
+                        udp_config,
+                    )
+
+                except SettingsManagerError as error:
+                    self._window.append_log(
+                        str(error),
+                        "ERROR",
+                    )
+                    self._window.append_log(
+                        "配置保存失败，"
+                        "但仍会继续尝试打开串口",
+                        "WARNING",
+                    )
+
+                else:
+                    self._window.append_log(
+                        "软件配置已保存："
+                        f"{self._settings_manager.settings_path}",
+                        "INFO",
+                    )
 
             udp_sender = UdpSender(udp_config)
 
@@ -151,7 +372,7 @@ class MainController(QObject):
                 str(error),
                 "ERROR",
             )
-            return
+            return False
 
         if self._udp_sender is not None:
             self._udp_sender.close()
@@ -203,6 +424,7 @@ class MainController(QObject):
         )
 
         worker.start()
+        return True
 
     def close_serial(self) -> None:
         worker = self._serial_worker
@@ -224,6 +446,19 @@ class MainController(QObject):
 
     @pyqtSlot(str)
     def _on_serial_opened(self, port: str) -> None:
+        if self._auto_connect_active:
+            attempts = (
+                self._auto_connect_attempts
+            )
+
+            self._auto_connect_active = False
+            self._auto_connect_timer.stop()
+
+            self._window.append_log(
+                "自动打开串口成功："
+                f"共尝试 {attempts} 次",
+                "INFO",
+            )
         self._window.set_serial_state(
             "connected",
             "已连接",
@@ -295,6 +530,12 @@ class MainController(QObject):
 
         if isinstance(finished_worker, SerialWorker):
             finished_worker.deleteLater()
+        if (
+            self._auto_connect_active
+            and self._serial_had_error
+            and not self._shutting_down
+        ):
+            self._schedule_auto_retry()
 
     @pyqtSlot(bytes)
     def _handle_complete_frame(
@@ -413,6 +654,10 @@ class MainController(QObject):
             return
 
         self._shutting_down = True
+
+        self._auto_connect_active = False
+        self._auto_connect_timer.stop()
+
         self._origin_monitor.stop()
         self._frame_assembler.discard()
 

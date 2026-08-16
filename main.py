@@ -1,5 +1,5 @@
 import sys
-
+from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from app.controllers.main_controller import MainController
@@ -42,7 +42,12 @@ def ensure_windows_startup(
     window.append_log(
         "已确保 Windows 登录自启动"
     )
+
 def main() -> int:
+    is_autostart = (
+        StartupManager.AUTOSTART_ARGUMENT
+        in sys.argv
+    )
     application = QApplication(sys.argv)
 
     window = MainWindow()
@@ -53,6 +58,12 @@ def main() -> int:
     )
     ensure_windows_startup(window)
     window.show()
+
+    if is_autostart:
+        QTimer.singleShot(
+            0,
+            controller.start_auto_connect,
+        )
 
     return application.exec()
 

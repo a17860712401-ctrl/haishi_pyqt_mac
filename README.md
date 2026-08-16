@@ -228,7 +228,7 @@ cd D:\Projects
 执行克隆命令：
 git clone https://github.com/用户名/项目名.git
 进入项目：
-cd 项目名
+cd 项目名 
 用 VS Code 打开：
 code .
 克隆指定分支可以使用：
@@ -288,3 +288,59 @@ if (Test-Path $statePath) {
       -LiteralPath $statePath `
       -Destination "$statePath.old-path.backup"
 }
+
+## 编译成软件
+1. 进入项目根目录
+进入包含 main.py 的目录：
+cd D:\sea_test\2026.9
+如果项目在下一层，请进入实际目录。
+2. 激活虚拟环境
+.\.venv\Scripts\Activate.ps1
+确认使用的是项目Python：
+python -c "import sys; print(sys.executable)"
+3. 安装PyInstaller
+python -m pip install pyinstaller
+验证：
+python -m PyInstaller --version
+4. 先生成目录版
+python -m PyInstaller `
+  --noconfirm `
+  --clean `
+  --windowed `
+  --name SerialUdpBridge `
+  main.py
+生成位置：
+dist\SerialUdpBridge\SerialUdpBridge.exe
+运行测试：
+.\dist\SerialUdpBridge\SerialUdpBridge.exe
+目录版需要保留整个：
+dist\SerialUdpBridge
+不能只复制里面的EXE。目录版更方便排查依赖问题。
+5. 确认正常后生成单文件版
+python -m PyInstaller `
+  --noconfirm `
+  --clean `
+  --onefile `
+  --windowed `
+  --name SerialUdpBridge `
+  main.py
+最终文件：
+dist\SerialUdpBridge.exe
+--onefile 表示生成一个EXE，--windowed 表示启动时不显示黑色控制台。PyInstaller官方说明可参考命令参数和目录版与单文件版区别。
+6. 放到最终运行位置
+例如创建：
+D:\SerialUdpBridge
+把EXE复制为：
+D:\SerialUdpBridge\SerialUdpBridge.exe
+然后从最终位置运行一次：
+& "D:\SerialUdpBridge\SerialUdpBridge.exe"
+这一步很重要：软件会把当前EXE的绝对路径写入开机自启动注册表。之后不要随意移动或删除这个EXE。
+检查自启动路径：
+Get-ItemPropertyValue `
+  -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" `
+  -Name "SerialUdpBridge"
+预期结果：
+"D:\SerialUdpBridge\SerialUdpBridge.exe"
+打包后的软件仍然监控：
+D:\origin
+D:\origin\Origin 2022(64bit)

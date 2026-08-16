@@ -70,7 +70,7 @@ class OriginMonitor(QObject):
         self._unavailable_paths: Set[str] = set()
 
         self._timer = QTimer(self)
-        self._timer.setInterval(
+        self._timer.setInterval( 
             self.SCAN_INTERVAL_MS
         )
         self._timer.timeout.connect(
@@ -238,7 +238,7 @@ class OriginMonitor(QObject):
                         "INFO",
                     )
                 )
-                
+
             else:
                 added_files = (
                     file_names - known_files

@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
 
 
 class MainWindow(QMainWindow):
+    DEFAULT_SERIAL_PORT = "COM6"
     refresh_ports_requested = pyqtSignal()
     toggle_serial_requested = pyqtSignal()
     reset_statistics_requested = pyqtSignal()
@@ -301,6 +302,70 @@ class MainWindow(QMainWindow):
             port=self.udp_port_spin.value(),
         )
 
+
+    def apply_configs(
+        self,
+        serial_config: SerialConfig,
+        udp_config: UdpConfig,
+    ) -> None:
+        port_index = self.port_combo.findData(
+            serial_config.port
+        )
+
+        if port_index < 0:
+            self.port_combo.addItem(
+                f"{serial_config.port}（未检测到）",
+                serial_config.port,
+            )
+            port_index = (
+                self.port_combo.count() - 1
+            )
+
+        self.port_combo.setCurrentIndex(
+            port_index
+        )
+
+        self.baud_rate_combo.setCurrentText(
+            str(serial_config.baud_rate)
+        )
+        self.data_bits_combo.setCurrentText(
+            str(serial_config.data_bits)
+        )
+        self.stop_bits_combo.setCurrentText(
+            f"{serial_config.stop_bits:g}"
+        )
+
+        parity_index = self.parity_combo.findData(
+            serial_config.parity.value
+        )
+
+        if parity_index >= 0:
+            self.parity_combo.setCurrentIndex(
+                parity_index
+            )
+
+        encoding_index = (
+            self.encoding_combo.findData(
+                serial_config.encoding.value
+            )
+        )
+
+        if encoding_index >= 0:
+            self.encoding_combo.setCurrentIndex(
+                encoding_index
+            )
+
+        self.frame_gap_spin.setValue(
+            serial_config.frame_gap_ms
+        )
+
+        self.udp_host_edit.setText(
+            udp_config.host
+        )
+        self.udp_port_spin.setValue(
+            udp_config.port
+        )
+
     def set_serial_ports(
         self,
         ports: List[Tuple[str, str]],
@@ -316,12 +381,18 @@ class MainWindow(QMainWindow):
 
             self.port_combo.addItem(display_text, device)
 
-        if not ports:
+        default_index = self.port_combo.findData(
+            self.DEFAULT_SERIAL_PORT
+        )
+
+        if default_index < 0:
             self.port_combo.addItem(
-                "未发现可用串口",
-                None,
+                f"{self.DEFAULT_SERIAL_PORT}（未检测到）",
+                self.DEFAULT_SERIAL_PORT,
             )
-            return
+            default_index = (
+                self.port_combo.count() - 1
+            )
 
         previous_index = self.port_combo.findData(
             previous_port
@@ -331,6 +402,11 @@ class MainWindow(QMainWindow):
             self.port_combo.setCurrentIndex(
                 previous_index
             )
+            return
+
+        self.port_combo.setCurrentIndex(
+            default_index
+        )
 
     def set_serial_state(
         self,
