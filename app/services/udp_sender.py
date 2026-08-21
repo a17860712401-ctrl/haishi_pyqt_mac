@@ -95,4 +95,3 @@ class UdpSender:
 
         self._socket.close()
         self._socket = None
-
