@@ -13,6 +13,7 @@ class UdpSender:
     """负责向固定目标地址发送 UDP 数据包。"""
 
     MAX_DATAGRAM_SIZE = 65507
+    SOURCE_PORT = 9001
 
     def __init__(self, config: UdpConfig) -> None:
         config.validate()
@@ -30,6 +31,21 @@ class UdpSender:
             socket_family,
             socket.SOCK_DGRAM,
         )
+
+        source_host = (
+            "::"
+            if socket_family == socket.AF_INET6
+            else "0.0.0.0"
+        )
+
+        try:
+            self._socket.bind(
+                (source_host, self.SOURCE_PORT)
+            )
+        except OSError:
+            self._socket.close()
+            self._socket = None
+            raise
 
     @property
     def is_closed(self) -> bool:
